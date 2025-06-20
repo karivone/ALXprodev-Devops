@@ -3,14 +3,14 @@
 # List of Pokémon
 POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
 
-# API Base URL
 BASE_URL="https://pokeapi.co/api/v2/pokemon"
-
-# Error log
 ERROR_LOG="errors.txt"
 > "$ERROR_LOG"
 
-# Function to fetch data for one Pokémon
+# Timeout in seconds per request
+TIMEOUT=10
+
+# Function to fetch Pokémon data with retry logic
 fetch_pokemon() {
   local name="$1"
   local output_file="${name}.json"
@@ -36,12 +36,31 @@ fetch_pokemon() {
   fi
 }
 
-# Loop over all Pokémon and run fetch in background
+# Track background process PIDs
+declare -a PIDS=()
+
 for name in "${POKEMON_LIST[@]}"; do
-  fetch_pokemon "$name" &
+  (
+    fetch_pokemon "$name"
+  ) &
+  PIDS+=($!)
 done
 
-# Wait for all background jobs to finish
-wait
+# Wait for processes with timeout
+START_TIME=$(date +%s)
 
-echo "✅ All Pokémon fetch tasks completed."
+for pid in "${PIDS[@]}"; do
+  while kill -0 "$pid" 2>/dev/null; do
+    NOW=$(date +%s)
+    ELAPSED=$((NOW - START_TIME))
+    if [ "$ELAPSED" -gt "$TIMEOUT" ]; then
+      echo "Process $pid taking too long. Killing..."
+      kill "$pid" 2>/dev/null
+      echo "[$(date)] Killed stuck process $pid after timeout." >> "$ERROR_LOG"
+      break
+    fi
+    sleep 1
+  done
+done
+
+echo "✅ All Pokémon fetch tasks attempted."
