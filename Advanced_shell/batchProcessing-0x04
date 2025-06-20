@@ -2,55 +2,77 @@
 
 # List of Pokémon to fetch
 POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
-
 BASE_URL="https://pokeapi.co/api/v2/pokemon"
 ERROR_LOG="errors.txt"
-> "$ERROR_LOG"  # Clear previous errors
+> "$ERROR_LOG"  # Clear previous log
 
-# Function to fetch a single Pokémon's data
+# Timeout for each fetch in seconds
+TIMEOUT=10
+
+# Function to fetch Pokémon data
 fetch_pokemon() {
   local name="$1"
-  local output_file="${name}.json"
+  local file="${name}.json"
   local retries=0
   local success=0
 
   while [ $retries -lt 3 ]; do
-    status_code=$(curl -s -w "%{http_code}" -o "$output_file" "$BASE_URL/$name")
-    if [ "$status_code" -eq 200 ]; then
-      echo "Fetched $name"
+    status=$(curl -s -w "%{http_code}" -o "$file" "$BASE_URL/$name")
+    if [ "$status" -eq 200 ]; then
+      echo "✅ Fetched $name"
       success=1
       break
     else
-      echo "Retry $((retries+1)) for $name failed (status: $status_code)"
+      echo "🔁 Retry $((retries + 1)) for $name (status: $status)"
       retries=$((retries + 1))
       sleep 2
     fi
   done
 
   if [ $success -eq 0 ]; then
-    echo "[$(date)] Failed to fetch $name after 3 attempts. Status: $status_code" >> "$ERROR_LOG"
-    rm -f "$output_file"
+    echo "[$(date)] ❌ Failed to fetch $name after 3 attempts. Status: $status" >> "$ERROR_LOG"
+    rm -f "$file"
   fi
 }
 
-# Start background fetches and track jobs
+# Start fetches in background and record their PIDs
+declare -A POKEMON_PIDS
+
 for name in "${POKEMON_LIST[@]}"; do
   fetch_pokemon "$name" &
+  POKEMON_PIDS[$name]=$!
 done
 
-# Use `jobs` to list all running background jobs
-echo "⏳ Currently running background jobs:"
+echo "🔍 Background jobs:"
 jobs -l
 
-# Wait for all background jobs to complete
-echo "🔄 Waiting for all fetch tasks to finish..."
+# Monitor and enforce timeout
+for name in "${!POKEMON_PIDS[@]}"; do
+  pid=${POKEMON_PIDS[$name]}
+  start_time=$(date +%s)
+
+  while kill -0 "$pid" 2>/dev/null; do
+    current_time=$(date +%s)
+    elapsed=$((current_time - start_time))
+
+    if [ "$elapsed" -gt "$TIMEOUT" ]; then
+      echo "⏱️ $name (PID $pid) exceeded timeout. Killing..."
+      kill "$pid" 2>/dev/null
+      echo "[$(date)] ⛔ Killed $name fetch (PID $pid) after ${TIMEOUT}s timeout" >> "$ERROR_LOG"
+      break
+    fi
+    sleep 1
+  done
+done
+
+# Wait for any remaining background processes
 wait
 
-echo "✅ All Pokémon fetch tasks completed."
+echo ""
+echo "📦 All Pokémon fetch tasks completed."
 
-# Check if there were any errors
 if [ -s "$ERROR_LOG" ]; then
-  echo "⚠️ Some fetches failed. See $ERROR_LOG for details."
+  echo "⚠️ Some fetches failed or timed out. See $ERROR_LOG for details."
 else
-  echo "🎉 All fetches succeeded!"
+  echo "🎉 All fetches succeeded without errors!"
 fi
