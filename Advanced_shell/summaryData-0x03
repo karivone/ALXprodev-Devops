@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# Output CSV file
+CSV_FILE="pokemon_report.csv"
+
+# CSV Header
+echo "Name,Height(m),Weight(kg)" > "$CSV_FILE"
+
+# Loop over all .json files
+for file in *.json; do
+  if jq -e . "$file" >/dev/null 2>&1; then
+    name=$(jq -r '.name' "$file")
+    height=$(jq -r '.height' "$file" | awk '{printf "%.1f", $1 / 10}')
+    weight=$(jq -r '.weight' "$file" | awk '{printf "%.0f", $1 / 10}')
+    echo "$name,$height,$weight" >> "$CSV_FILE"
+  else
+    echo "Invalid JSON in $file. Skipping."
+  fi
+done
+
+echo "Report saved to $CSV_FILE"
+echo ""
+
+# Calculate averages using awk
+echo "Average values:"
+awk -F',' 'NR > 1 { total_height += $2; total_weight += $3; count++ }
+           END { 
+             if (count > 0) {
+               printf "Average Height: %.2f m\n", total_height / count
+               printf "Average Weight: %.2f kg\n", total_weight / count
+             } else {
+               print "No valid entries to average."
+             }
+           }' "$CSV_FILE"
