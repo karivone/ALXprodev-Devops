@@ -6,24 +6,42 @@ POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
 # Base API URL
 BASE_URL="https://pokeapi.co/api/v2/pokemon"
 
+# Error log file
+ERROR_LOG="errors.txt"
+
+# Clear previous error log
+> "$ERROR_LOG"
+
 # Loop through each Pokémon
 for NAME in "${POKEMON_LIST[@]}"; do
-    echo "Fetching data for $NAME..."
+  echo "Fetching data for $NAME..."
 
-    # Construct the filename (e.g., bulbasaur.json)
-    OUTPUT_FILE="${NAME}.json"
+  OUTPUT_FILE="${NAME}.json"
+  RETRIES=0
+  SUCCESS=0
 
-    # Make the API request and save the output
-    curl -s -o "$OUTPUT_FILE" "$BASE_URL/$NAME"
+  while [ $RETRIES -lt 3 ]; do
+    # Try to fetch data
+    STATUS_CODE=$(curl -s -w "%{http_code}" -o "$OUTPUT_FILE" "$BASE_URL/$NAME")
 
-    # Check if the request was successful
-    if jq -e . "$OUTPUT_FILE" >/dev/null 2>&1; then
-        echo "Saved to $OUTPUT_FILE"
+    # Check if HTTP status is 200 (OK)
+    if [ "$STATUS_CODE" -eq 200 ]; then
+      echo "Saved to $OUTPUT_FILE"
+      SUCCESS=1
+      break
     else
-        echo "[$(date)] Error retrieving data for $NAME" >> errors.txt
-        rm -f "$OUTPUT_FILE"
+      echo "Attempt $((RETRIES+1)) failed for $NAME (status: $STATUS_CODE)"
+      RETRIES=$((RETRIES + 1))
+      sleep 2  # wait before retrying
     fi
+  done
 
-    # Delay to avoid hitting the rate limit (adjust as needed)
-    sleep 2
+  # If after 3 attempts it still failed
+  if [ $SUCCESS -eq 0 ]; then
+    echo "[$(date)] Failed to fetch $NAME after 3 attempts. Status: $STATUS_CODE" >> "$ERROR_LOG"
+    rm -f "$OUTPUT_FILE"
+  fi
+
+  # Delay between Pokémon to reduce rate-limit risk
+  sleep 2
 done
