@@ -1,16 +1,13 @@
 #!/bin/bash
 
-# List of Pokémon
+# List of Pokémon to fetch
 POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
 
 BASE_URL="https://pokeapi.co/api/v2/pokemon"
 ERROR_LOG="errors.txt"
-> "$ERROR_LOG"
+> "$ERROR_LOG"  # Clear previous errors
 
-# Timeout in seconds per request
-TIMEOUT=10
-
-# Function to fetch Pokémon data with retry logic
+# Function to fetch a single Pokémon's data
 fetch_pokemon() {
   local name="$1"
   local output_file="${name}.json"
@@ -36,31 +33,24 @@ fetch_pokemon() {
   fi
 }
 
-# Track background process PIDs
-declare -a PIDS=()
-
+# Start background fetches and track jobs
 for name in "${POKEMON_LIST[@]}"; do
-  (
-    fetch_pokemon "$name"
-  ) &
-  PIDS+=($!)
+  fetch_pokemon "$name" &
 done
 
-# Wait for processes with timeout
-START_TIME=$(date +%s)
+# Use `jobs` to list all running background jobs
+echo "⏳ Currently running background jobs:"
+jobs -l
 
-for pid in "${PIDS[@]}"; do
-  while kill -0 "$pid" 2>/dev/null; do
-    NOW=$(date +%s)
-    ELAPSED=$((NOW - START_TIME))
-    if [ "$ELAPSED" -gt "$TIMEOUT" ]; then
-      echo "Process $pid taking too long. Killing..."
-      kill "$pid" 2>/dev/null
-      echo "[$(date)] Killed stuck process $pid after timeout." >> "$ERROR_LOG"
-      break
-    fi
-    sleep 1
-  done
-done
+# Wait for all background jobs to complete
+echo "🔄 Waiting for all fetch tasks to finish..."
+wait
 
-echo "✅ All Pokémon fetch tasks attempted."
+echo "✅ All Pokémon fetch tasks completed."
+
+# Check if there were any errors
+if [ -s "$ERROR_LOG" ]; then
+  echo "⚠️ Some fetches failed. See $ERROR_LOG for details."
+else
+  echo "🎉 All fetches succeeded!"
+fi
